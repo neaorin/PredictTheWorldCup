@@ -69,33 +69,35 @@ In the [input](/input) folder of this repo you'll find two datasets:
 
 ## TODO 
 
-1. Clean up venue information (home/away)
+1. Clean up venue information (home/away) -> Lucas
     - known issues:
-        - lots of missing data for venue
+        - lots of missing data for venue 
         - venues for which text matching doesn't work:Moscow/URS, Leipzig/Germany DR etc
         - how many instances, can we find additional data?
 
-2. Olympics
-    - do we use them?
+2. Tournament simulator app -> Sorin
 
 3. Win percentage
-    - how do we account for strength of schedule (ex. KOR having a better win% than ITA or NED)
-    - do we use successor countries or not? ex. FRG -> GER, URS -> RUS, etc.
+    - how do we account for strength of schedule (ex. KOR having a better win% than ITA or NED) -> Sorin, TODO
+    - do we use successor countries or not? ex. FRG -> GER, URS -> RUS, etc. -> Lucas 
+    https://en.wikipedia.org/wiki/List_of_FIFA_country_codes#Obsolete_country_codes
 
 
 4. Feature engineering
     - add strength of schedule as a rolling feature somehow
     - get more data?
-        - economic data
-        - weather at date of game & venue
-        - coaching (e.g. how many coaching changes in the past X? how recent was the coach changed?)
-        - rolling data by type of game? (e.g. rolling 20 wins for games of the same type - qualifiers)
+        - economic data -> poverty and population http://data.worldbank.org/indicator (Lucas)
+        - weather at date of game & venue -> Lucas
+        - coaching (e.g. how many coaching changes in the past X? how recent was the coach changed?) -> Lucas https://eu-football.info/_matches.php?id=60&page=33
+        - rolling data by type of game? (e.g. rolling 20 wins for games of the same type - qualifiers) -> Sorin
+        - rolling data by period of time -> Sorin
 
 5. What value are we predicting?
-    - classifier vs regression
-    - calculate an outcome from the actual result + (something else?)
+    - regression
+    - calculate an outcome from the actual result + (something else?) -> Sorin, gd AND totalgoals
 
-6. What algorithms are we using?
+6. What algorithms are we using? - WIP
 
-7. How do we split the data into training / testing?
+7. How do we split the data into training / testing? 
+    - try with eliminating friendlies, and Friendlies + Olympics -> Sorin
         

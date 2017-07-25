@@ -16,6 +16,19 @@ library("stringr") # String functions
 install.packages("Amelia")
 library("Amelia") # missing data eval
 
+install.packages("randomForest")
+library("randomForest")  # Random forests
+
+install.packages("party")
+library(party) # Recursive partitioning
+
+install.packages("https://cran.rstudio.com/bin/windows/contrib/3.4/coin_1.2-1.zip", 
+                repos = NULL, type="source") 
+library(coin) # Conditional Inference Procedures
+
+install.packages("Metrics")
+library(Metrics) # Eval metrics for ML
+
 #load the matches data
 
 if(!file.exists("matches.csv")){
@@ -122,6 +135,20 @@ matches %>%
     geom_bar(aes(fill=CupName), width=1, color="black") +
     theme(legend.position = "bottom", legend.direction = "vertical")
 
+# how about games for which we don't have the venue recorded?
+matches %>%
+  filter(is.na(venue)) %>%
+  ggplot(mapping = aes(year(date))) +
+  geom_bar(aes(fill=CupName), width=1, color="black") +
+  theme(legend.position = "bottom", legend.direction = "vertical")
+
+matches %>%
+  filter(is.na(venue)) %>%
+  group_by(CupName) %>%
+  summarise(
+    total = n()
+  )
+
 # how many goals have been scored per game over the years? 
 matches %>%
   group_by(year = year(date)) %>%
@@ -180,7 +207,7 @@ plot_winpercentage(teamperf %>% filter(friendly == FALSE), 150)
 # how about final tournaments only?
 # the number of games played in final tournaments is much smaller than friendlies or qualifiers.
 
-plot_winpercentage(teamperf %>% filter(finaltourn == TRUE), 0)
+plot_winpercentage(teamperf %>% filter(finaltourn == TRUE), 30)
 
 # what is the occurence frequency for match scores?
 
@@ -311,3 +338,118 @@ write.csv(match_features, "match_features.csv", row.names = TRUE)
 match_features %>% filter(date >= "2014-06-12" & date <= "2014-07-13" & finaltourn == TRUE) %>%
   write.csv("match_features_wc2014.csv",row.names = TRUE)
 
+#matches %>% filter(date >= "2014-06-12" & date <= "2014-07-13" & finaltourn == TRUE)
+
+# create the training formula 
+trainformula <- as.formula(paste('outcome',
+                                 paste(names(match_features)[c(2:25)],collapse=' + '),
+                                 sep=' ~ '))
+trainformula
+
+
+
+# training and testing datasets
+
+data.train1 <- match_features %>% filter(date >= '1960/1/1' & date < '2008/1/1')
+data.test1 <- match_features %>% filter(date >= '2008/1/1')
+
+data.train2 <- match_features %>% filter(date >= '1960/1/1' & date < '2003/1/1')
+data.test2 <- match_features %>% filter(date >= '2003/1/1')
+
+data.train3 <- match_features %>% filter(date >= '1960/1/1' & date < '1999/1/1')
+data.test3 <- match_features %>% filter(date >= '1999/1/1')
+
+data.train4 <- match_features %>% filter(date >= '1960/1/1' & date < '1993/1/1')
+data.test4 <- match_features %>% filter(date >= '1993/1/1')
+
+# Random forest
+
+set.seed(4342)
+
+model.randomForest1 <- randomForest::randomForest(trainformula, data = data.train1, 
+                                                  importance = TRUE, ntree = 500)
+model.randomForest2 <- randomForest::randomForest(trainformula, data = data.train2, 
+                                                  importance = TRUE, ntree = 50)
+model.randomForest3 <- randomForest::randomForest(trainformula, data = data.train3, 
+                                                  importance = TRUE, ntree = 50)
+model.randomForest4 <- randomForest::randomForest(trainformula, data = data.train4, 
+                                                  importance = TRUE, ntree = 50)
+
+randomForest::varImpPlot(model.randomForest1)
+
+data.pred.randomForest1 <- predict(model.randomForest1, data.test1)
+data.pred.randomForest2 <- predict(model.randomForest2, data.test2)
+data.pred.randomForest3 <- predict(model.randomForest3, data.test3)
+data.pred.randomForest4 <- predict(model.randomForest4, data.test4)
+
+# Conditional inference trees
+
+set.seed(4342)
+
+model.condForest1 <- party::cforest(trainformula, data = data.train1, 
+                                    controls = party::cforest_unbiased(ntree = 500, mtry = 7))
+model.condForest2 <- party::cforest(trainformula, data = data.train2, 
+                                    controls = party::cforest_unbiased(ntree = 50, mtry = 7))
+model.condForest3 <- party::cforest(trainformula, data = data.train3, 
+                                    controls = party::cforest_unbiased(ntree = 50, mtry = 7))
+model.condForest4 <- party::cforest(trainformula, data = data.train4, 
+                                    controls = party::cforest_unbiased(ntree = 50, mtry = 7))
+
+party::varimp(model.condForest1)
+
+data.pred.condForest1 <- predict(model.condForest1, data.test1, OOB = TRUE, type = "response")
+data.pred.condForest2 <- predict(model.condForest2, data.test2, OOB = TRUE, type = "response")
+data.pred.condForest3 <- predict(model.condForest3, data.test3, OOB = TRUE, type = "response")
+data.pred.condForest4 <- predict(model.condForest4, data.test4, OOB = TRUE, type = "response")
+
+
+# compute evaluation metrics 
+
+metrics.randomForest1.mae <- Metrics::mae(data.test1$outcome, data.pred.randomForest1)
+metrics.randomForest2.mae <- Metrics::mae(data.test2$outcome, data.pred.randomForest2)
+metrics.randomForest3.mae <- Metrics::mae(data.test3$outcome, data.pred.randomForest3)
+metrics.randomForest4.mae <- Metrics::mae(data.test4$outcome, data.pred.randomForest4)
+
+metrics.randomForest1.rmse <- Metrics::rmse(data.test1$outcome, data.pred.randomForest1)
+metrics.randomForest2.rmse <- Metrics::rmse(data.test2$outcome, data.pred.randomForest2)
+metrics.randomForest3.rmse <- Metrics::rmse(data.test3$outcome, data.pred.randomForest3)
+metrics.randomForest4.rmse <- Metrics::rmse(data.test4$outcome, data.pred.randomForest4)
+
+metrics.condForest1.mae <- Metrics::mae(data.test1$outcome, data.pred.condForest1)
+metrics.condForest2.mae <- Metrics::mae(data.test2$outcome, data.pred.condForest2)
+metrics.condForest3.mae <- Metrics::mae(data.test3$outcome, data.pred.condForest3)
+metrics.condForest4.mae <- Metrics::mae(data.test4$outcome, data.pred.condForest4)
+
+metrics.condForest1.rmse <- Metrics::rmse(data.test1$outcome, data.pred.condForest1)
+metrics.condForest2.rmse <- Metrics::rmse(data.test2$outcome, data.pred.condForest2)
+metrics.condForest3.rmse <- Metrics::rmse(data.test3$outcome, data.pred.condForest3)
+metrics.condForest4.rmse <- Metrics::rmse(data.test4$outcome, data.pred.condForest4)
+
+
+metrics.randomForest1.mae
+metrics.randomForest2.mae
+metrics.randomForest3.mae
+metrics.randomForest4.mae
+
+metrics.randomForest1.rmse
+metrics.randomForest2.rmse
+metrics.randomForest3.rmse
+metrics.randomForest4.rmse
+
+R2 <- function(actual, predicted)
+  1 - sum((actual-predicted)^2)/sum((actual-mean(actual))^2)
+
+R2(data.test1$outcome, data.pred.randomForest1)
+R2(data.test1$outcome, data.pred.condForest1)
+
+
+temp <- matches %>% filter(is.na(venue))
+
+temp<-anti_join(matches, API_SP_POP_TOTL_DS2_en_csv_v2, by = c("team1" = "Country Code")) %>%
+  anti_join(API_SP_POP_TOTL_DS2_en_csv_v2, by = c("team1Text" = "Country Name")) %>%
+  group_by(team1Text) %>%
+  summarize(
+    count = n()
+  )
+
+sum(temp$count)
