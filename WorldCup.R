@@ -45,13 +45,6 @@ if(file.exists("matches.csv")) matches_original <- read_csv("matches.csv")
 matches <- matches_original %>%
   distinct(.keep_all = TRUE, date, team1, team2)
 
-temp <- matches %>%
-  group_by(date, team1, team2) %>%
-  summarise(
-    count = n()
-  ) %>%
-  filter(count > 1) 
-
 #format datetime
 matches$date <- as.POSIXct(strptime(matches$date, "%Y%m%d"), origin="1960-01-01", tz="UTC")
 
@@ -65,6 +58,45 @@ missmap(matches, main = "Missing values")
 
 # generate an id column for future use (joins etc)
 matches$match_id = seq.int(nrow(matches))
+
+# randomize team1 and team2 in the dataset to avoid bias in team1 being the home team (more likely to win than team2)
+summary(matches$team1Score - matches$team2Score)
+
+set.seed(4342)
+matches$switch = runif(nrow(temp), min = 0, max = 1)
+
+summary(matches$switch)
+
+matches <- bind_rows(
+  matches %>% filter(switch < 0.5),
+  matches %>% filter(switch >= 0.5) %>%
+    dplyr::mutate(
+      x_team2 = team2,
+      team2 = team1,
+      team1 = x_team2,
+      
+      x_team2Text = team2Text,
+      team2Text = team1Text,
+      team1Text = x_team2Text,
+
+      x_resText = "",
+      
+      x_team2Score = team2Score,
+      team2Score = team1Score,
+      team1Score = x_team2Score,
+      
+      x_team2PenScore = team2PenScore,
+      team2PenScore = team1PenScore,
+      team1PenScore = x_team2PenScore
+    ) %>%
+    dplyr::select(
+      date, team1, team1Text, team2, team2Text, resText, statText, venue, IdCupSeason, CupName, team1Score, team2Score, team1PenScore, team2PenScore, match_id, switch
+    )
+    ) %>% 
+  arrange(date) %>%
+  dplyr::select(-c(switch))
+
+summary(matches$team1Score - matches$team2Score)
 
 # is the game played in a neutral venue
 matches$team1Home <- mapply(grepl, pattern=matches$team1Text, x=matches$venue, MoreArgs = list(fixed = TRUE, ignore.case = FALSE))
@@ -357,9 +389,9 @@ match_features <- matches %>%
 #  dplyr::select(-c(n,freq,scoretext))
 match_features$outcome = match_features$team1Score - match_features$team2Score
 
-# drop all non-feature columns
+# drop all non-interesting columns, and those which should not be supplied for new data (like score)
 match_features <- match_features %>%
-  dplyr::select(-c(match_id,team1,team2,team1Score,team2Score))
+  dplyr::select(-c(match_id,team1Score,team2Score))
 
 # Model fitting
 # just azure ML!
@@ -372,15 +404,11 @@ write.csv(match_features, "match_features.csv", row.names = TRUE)
 match_features %>% filter(date >= "2014-06-12" & date <= "2014-07-13" & finaltourn == TRUE) %>%
   write.csv("match_features_wc2014.csv",row.names = TRUE)
 
-#matches %>% filter(date >= "2014-06-12" & date <= "2014-07-13" & finaltourn == TRUE)
-
 # create the training formula 
 trainformula <- as.formula(paste('outcome',
-                                 paste(names(match_features)[c(2:33)],collapse=' + '),
+                                 paste(names(match_features %>% dplyr::select(-c(date,team1,team2,outcome))),collapse=' + '),
                                  sep=' ~ '))
 trainformula
-
-
 
 # training and testing datasets
 
@@ -392,7 +420,7 @@ data.test1 <- match_features %>% filter(date >= '2010/1/1')
 set.seed(4342)
 
 model.randomForest1 <- randomForest::randomForest(trainformula, data = data.train1, 
-                                                  importance = TRUE, ntree = 500)
+                                                  importance = TRUE, ntree = 100)
 
 randomForest::varImpPlot(model.randomForest1)
 
@@ -465,3 +493,110 @@ R2(data.test1$outcome, data.pred.randomForest1)
 R2(data.test1$outcome, data.pred.condForest1)
 R2(data.test1$outcome, data.pred.nn1)
   
+
+
+# qualified teams - calculate input dataset
+
+
+data.topredict <- expand.grid(team1 = qualified$name, team2 = qualified$name, stringsAsFactors = FALSE) %>% filter(team1 < team2)
+
+temp <- teamperf %>%
+  semi_join(qualified, by = c("name")) %>%
+  group_by(name) %>%
+  summarise(
+    date = max(date)
+  )
+
+temp <- team_features %>%
+  semi_join(temp, by = c("name", "date"))
+
+data.topredict <- data.topredict %>%
+  left_join(temp, by = c("team1" = "name")) %>%
+  left_join(temp, by = c("team2" = "name"), suffix = c(".t1", ".t2")) %>%
+  dplyr::select(
+    team1, team2,
+    last5games_w_per.t1,
+    last20games_w_per.t1,
+    last35games_w_per.t1,
+    last5games_l_per.t1,
+    last20games_l_per.t1,
+    last35games_l_per.t1,
+    last5games_d_per.t1,
+    last20games_d_per.t1,
+    last35games_d_per.t1,
+    last5games_gd_per.t1, 
+    last20games_gd_per.t1,
+    last35games_gd_per.t1,
+    strength_of_schedule.t1,
+    last5games_w_per.t2,
+    last20games_w_per.t2,
+    last35games_w_per.t2,
+    last5games_l_per.t2,
+    last20games_l_per.t2,
+    last35games_l_per.t2,
+    last5games_d_per.t2,
+    last20games_d_per.t2,
+    last35games_d_per.t2,
+    last5games_gd_per.t2, 
+    last20games_gd_per.t2,
+    last35games_gd_per.t2,
+    strength_of_schedule.t2
+  ) %>%
+  mutate(
+    date = as.POSIXct("2017-01-01"), 
+    team1Home = FALSE, team2Home = FALSE, neutralVenue = FALSE, friendly = FALSE, qualifier = FALSE, finaltourn = TRUE
+  )
+
+write.csv(data.topredict, "match_features_wc2018.csv",row.names = TRUE)
+
+# ---------- #
+
+match_predictions_wc2018 <- read_csv("match_predictions_wc2018.csv")
+
+temp <- match_predictions_wc2018 %>% dplyr::select(team1, team2, outcome = "Scored Label Mean", sd = "Scored Label Standard Deviation")
+
+
+temp <- temp %>% group_by(team1) %>% summarise(outcome_m = mean(outcome), sd_m = mean(sd)) %>% arrange(outcome_m)
+
+temp$team1wins <- NA
+temp$draw <- NA
+temp$team2wins <- NA
+
+gd_draw_threshold <- 0.2745
+
+for (i in 1:nrow(temp)) {
+  normd <- rnorm(100, temp[i,]$outcome)
+  temp[i,]$team1wins <- 0.01 * length(normd[normd > gd_draw_threshold])
+  temp[i,]$team2wins <- 0.01 * length(normd[normd < -gd_draw_threshold])
+  temp[i,]$draw <- 0.01 * length(normd[abs(normd) <= gd_draw_threshold])
+}
+
+sum(temp$draw) / (sum(temp$team1wins) + sum(temp$team2wins))
+
+
+# code for transforming population data
+
+library(readr)
+API_SP_POP_TOTL_DS2_en_csv_v2 <- read_csv("~/API_SP.POP.TOTL_DS2_en_csv_v2.csv")
+
+cols <- c("Country Name","Country Code","Indicator Name","Indicator Code","pop.1960","pop.1961","pop.1962","pop.1963","pop.1964","pop.1965","pop.1966","pop.1967","pop.1968","pop.1969","pop.1970","pop.1971","pop.1972","pop.1973","pop.1974","pop.1975","pop.1976","pop.1977","pop.1978","pop.1979","pop.1980","pop.1981","pop.1982","pop.1983","pop.1984","pop.1985","pop.1986","pop.1987","pop.1988","pop.1989","pop.1990","pop.1991","pop.1992","pop.1993","pop.1994","pop.1995","pop.1996","pop.1997","pop.1998","pop.1999","pop.2000","pop.2001","pop.2002","pop.2003","pop.2004","pop.2005","pop.2006","pop.2007","pop.2008","pop.2009","pop.2010","pop.2011","pop.2012","pop.2013","pop.2014","pop.2015","pop.2016","X62")
+colnames(API_SP_POP_TOTL_DS2_en_csv_v2) <- cols
+
+# transformation
+yrnames <- names(API_SP_POP_TOTL_DS2_en_csv_v2 %>% select(c(5:61)))
+API_SP_POP_TOTL_DS2_en_csv_v2 <- rbind(API_SP_POP_TOTL_DS2_en_csv_v2, c("England", "ENG", "Population.total", "SP.POP.TOTL"))
+
+population <- stats::reshape(as.data.frame(API_SP_POP_TOTL_DS2_en_csv_v2), idvar = "Country Code",
+        varying = as.vector(5:61), direction = "long")
+
+temp <- matches %>%
+  mutate (year = year(date)) %>%
+  left_join(population, by = c("team1" = "Country Code", "year" = "time")) 
+
+
+temp <- matches %>%
+  distinct(team1, team1Text) %>%
+  anti_join(API_SP_POP_TOTL_DS2_en_csv_v2, by = c("team1" = "Country Code")) %>%
+  anti_join(API_SP_POP_TOTL_DS2_en_csv_v2, by = c("team1Text" = "Country Name"))
+  
+
