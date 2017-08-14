@@ -1,0 +1,20 @@
+{
+  "version": "0.1.0",
+  "private": true,
+  "name": "fifa-acquisition",
+  "scripts": {},
+  "dependencies": {
+    "core-util-is": "^1.0.2",
+    "dateformat": "^2.0.0",
+    "dotenv": "^4.0.0",
+    "http": "0.0.0",
+    "jquery": "^3.2.1",
+    "jsdom": "^11.1.0",
+    "json2csv": "^3.11.1",
+    "mkdirp": "^0.5.1",
+    "process-nextick-args": "^1.0.7",
+    "sync-request": "^4.1.0",
+    "sync-rest-client": "^1.0.1",
+    "util-deprecate": "^1.0.2"
+  }
+}
