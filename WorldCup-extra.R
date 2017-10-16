@@ -1,6 +1,8 @@
 
 # prepare the R environment
 
+library("tidyverse")
+
 library("dplyr") # Data munging functions
 library("zoo")   # Feature engineering rolling aggregates
 
@@ -22,7 +24,7 @@ library("randomForest")  # Random forests
 install.packages("Metrics")
 library(Metrics) # Eval metrics for ML
 
-# Load the matches data
+#load the matches data
 
 if(!file.exists("matches.csv")){
     tryCatch(download.file('https://github.com/neaorin/PredictTheWorldCup/raw/master/input/matches.csv'
@@ -31,48 +33,35 @@ if(!file.exists("matches.csv")){
                 
 if(file.exists("matches.csv")) matches_original <- read_csv("matches.csv")
 
-# eliminate any duplicates that may exist in the dataset
+#eliminate any duplicates
 matches <- matches_original %>%
   distinct(.keep_all = TRUE, date, team1, team2)
 
-# the date field is formatted as a string (e.g. 19560930) - transform that into R date
+#format datetime
 matches$date <- as.POSIXct(strptime(matches$date, "%Y%m%d"), origin="1960-01-01", tz="UTC")
-
-# generate an id column for future use (joins etc)
-matches$match_id = seq.int(nrow(matches))
 
 head(matches)
 summary(matches)
 
-# how many international games have been played over the years?
-matches %>%
-  ggplot(mapping = aes(year(date))) +
-    geom_bar(aes(fill=CupName), width=1, color="black") +
-    theme(legend.position = "bottom", legend.direction = "vertical")
-
-# how many goals have been scored per game over the years? 
-matches %>%
-  dplyr::group_by(year = year(date)) %>%
-  dplyr::summarize(
-    totalgames = n(),
-    totalgoals = sum(team1Score + team2Score),
-    goalspergame = totalgoals / totalgames
-    ) %>%
-  ggplot(mapping = aes(x = year, y = goalspergame)) +
-    geom_point() +
-    geom_smooth(method = "loess")
-
 # what values is our dataset missing?
-Amelia::missmap(matches, main = "Missing values")
+missmap(matches, main = "Missing values")
 
+# compute some additional values about the games
+
+# generate an id column for future use (joins etc)
+matches$match_id = seq.int(nrow(matches))
+
+# randomize team1 and team2 in the dataset to avoid bias in team1 being the home team (more likely to win than team2)
 summary(matches$team1Score - matches$team2Score)
 
 set.seed(4342)
 matches$switch = runif(nrow(matches), min = 0, max = 1)
 
+summary(matches$switch)
+
 matches <- bind_rows(
-  matches %>% dplyr::filter(switch < 0.5),
-  matches %>% dplyr::filter(switch >= 0.5) %>%
+  matches %>% filter(switch < 0.5),
+  matches %>% filter(switch >= 0.5) %>%
     dplyr::mutate(
       x_team2 = team2,
       team2 = team1,
@@ -96,7 +85,7 @@ matches <- bind_rows(
       date, team1, team1Text, team2, team2Text, resText, statText, venue, IdCupSeason, CupName, team1Score, team2Score, team1PenScore, team2PenScore, match_id, switch
     )
     ) %>% 
-  dplyr::arrange(date) %>%
+  arrange(date) %>%
   dplyr::select(-c(switch))
 
 summary(matches$team1Score - matches$team2Score)
@@ -122,17 +111,15 @@ matches$finaltourn <- FALSE
 matches$finaltourn[matches$CupName %like% "Final"] <- TRUE
 matches$finaltourn[matches$CupName %like% "Confederations Cup"] <- TRUE
 
-head(matches)
-
 # only use official matches (no friendlies)
-matches <- matches %>% dplyr::filter(friendly == FALSE)
+matches <- matches %>% filter(friendly == FALSE)
 
 # transform the matches table into a team performance table, where each team being 
 # involved in a game is a separate observation (row)
 
 teamperf <- bind_rows(
     (matches %>%
-    dplyr::mutate(
+    mutate(
       name = team1,
       opponentName = team2,
       homeVenue = team1Home,
@@ -150,7 +137,7 @@ teamperf <- bind_rows(
     dplyr::select (match_id, date, name, opponentName, homeVenue, neutralVenue, gs, ga, gd, w, l, d, friendly, qualifier, finaltourn))
     ,
     (matches %>%
-    dplyr::mutate(
+      mutate(
       name = team2,
       opponentName = team1,
       homeVenue = team2Home,
@@ -167,15 +154,32 @@ teamperf <- bind_rows(
     ) %>%
       dplyr::select (match_id, date, name, opponentName, homeVenue, neutralVenue, gs, ga, gd, w, l, d, friendly, qualifier, finaltourn))
   ) %>%
-  dplyr::arrange(date)
+  arrange(date)
 
 head(teamperf)
 
-# Out of the teams who have played at least 100 games, what are the winning percentages for each of those teams?
+# how many international games have been played over the years?
+matches %>%
+  ggplot(mapping = aes(year(date))) +
+    geom_bar(aes(fill=CupName), width=1, color="black") +
+    theme(legend.position = "bottom", legend.direction = "vertical")
 
-formula_winpercentage <- function(totalgames, wins, draws) {
-    return ((wins + 0.5 * draws) / totalgames)
-}
+# how many goals have been scored per game over the years? 
+# how about the win margin (goal difference) over the years?
+history_indicators <- matches %>%
+  group_by(year = year(date)) %>%
+  summarize(
+    gs_pergame = mean(team1Score + team2Score),
+    gd_pergame = mean(abs(team1Score - team2Score))
+  ) %>%
+  dplyr::select (year, gs_pergame, gd_pergame)
+
+ggplot(history_indicators, mapping = aes(x = year, y = gs_pergame)) +
+    geom_point() +
+    geom_smooth(method = "loess")
+
+# Out of the teams who have played at least 200 games, what are the winning percentages for each of those teams?
+# We use the current point system of 3 points for a win, 1 point for a draw, 0 for a loss.
 
 plot_winpercentage <- function(teamperf, mingames) {
   teamperf %>%
@@ -184,7 +188,7 @@ plot_winpercentage <- function(teamperf, mingames) {
     totalgames = n(),
     wins = length(w[w==TRUE]),
     draws = length(d[d==TRUE]),
-    winpercentage = formula_winpercentage(totalgames, wins, draws)
+    winpercentage = (wins*3 + draws) / (totalgames*3)
   ) %>%
   filter(totalgames >= mingames ) %>%
   ggplot(mapping = aes(x = winpercentage, y = totalgames)) +
@@ -194,7 +198,7 @@ plot_winpercentage <- function(teamperf, mingames) {
   expand_limits(x = c(0,1))
 } 
 
-plot_winpercentage(teamperf, 100)
+plot_winpercentage(teamperf, 200)
 
 # transform old country codes into new ones.
 countryCodeMappings <- matrix(c(
@@ -202,7 +206,7 @@ countryCodeMappings <- matrix(c(
   "TCH","CZE",
   "URS","RUS",
   "SCG","SRB",
-  "ZAI","COD"
+  "ZAI","CGO"
   ), ncol=2, byrow = TRUE)
 
 for (i in 1:nrow(countryCodeMappings)) {
@@ -214,7 +218,27 @@ for (i in 1:nrow(countryCodeMappings)) {
 }
 
 # let's run the win percentage graph again
-plot_winpercentage(teamperf, 100)
+plot_winpercentage(teamperf, 200)
+
+# how about final tournaments only?
+# the number of games played in final tournaments is much smaller than friendlies or qualifiers.
+
+plot_winpercentage(teamperf %>% filter(finaltourn == TRUE), 50)
+
+history_perf <- teamperf %>% 
+  mutate(
+    periodyearstart = year(date) - year(date) %% 5,
+    periodyearend = periodyearstart + 4
+  ) %>%
+  group_by(name, periodyearstart, periodyearend) %>%
+  summarize(
+    totalgames = n(),
+    wins = length(w[w==TRUE]),
+    draws = length(d[d==TRUE]),
+    winpercentage = (wins*3 + draws) / (totalgames*3)
+  ) %>%
+  ungroup() %>%
+  filter(totalgames >= 10)
 
 # what is the occurence frequency for match scores?
 
@@ -232,52 +256,16 @@ scorefreq <- matches %>%
 
   head(scorefreq, 20)
 
-# distribution of goals scored per match
-
-gsfreq <- matches %>%
-  group_by(gs = team1Score + team2Score) %>%
-  summarise(
-    n = n(),
-    freq = n / nrow(matches)
-  ) %>%
-  ungroup() %>%
-  arrange(desc(freq)) 
-
-head(gsfreq, 10)
-
-gsfreq %>%
-  filter(freq >= 0.01) %>%
+  scorefreq %>%
+  filter(freq >= 0.001) %>%
   
-  ggplot(mapping = aes(x = gs, y = freq)) +
-  geom_point() +
-  geom_smooth(method = "loess") + 
-  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+  ggplot(mapping = aes(x = reorder(scoretext, -freq), y = freq)) +
+    geom_point() +
+    theme(axis.text.x = element_text(angle = 60, hjust = 1))
 
-# distribution of goal differential per match
-
-gdfreq <- matches %>%
-  group_by(gd = team1Score - team2Score) %>%
-  summarise(
-    n = n(),
-    freq = n / nrow(matches)
-  ) %>%
-  ungroup() %>%
-  arrange(desc(freq)) 
-
-head(gdfreq, 10)
-
-gdfreq %>%
-  filter(freq >= 0.01) %>%
-  
-  ggplot(mapping = aes(x = gd, y = freq)) +
-  geom_point() +
-  geom_smooth(method = "loess") + 
-  theme(axis.text.x = element_text(angle = 60, hjust = 1))
-
-
-# Let's calculate some lag features for each team which is about to play a game
+# Let's calculate some lag indicators for each team which is about to play a game
 # we'll take three windows: last 5 games, last 20 games, last 35 games.
-# for each window we'll calculate some values
+# for each window we'll calculate win percentage, loss percentage, draw percentage, and goal differential
 
 lagfn <- function(data, width) {
   return (rollapplyr(data, width = width + 1, FUN = sum, fill = NA, partial=TRUE) - data)
@@ -288,9 +276,9 @@ lagfn_per <- function(data, width) {
 }
 
 team_features <- teamperf %>%
-  dplyr::arrange(name, date) %>%
-  dplyr::group_by(name) %>%
-  dplyr::mutate(
+  arrange(name, date) %>%
+  group_by(name) %>%
+  mutate(
     last5games_w_per = lagfn_per(w, 5),
     last20games_w_per = lagfn_per(w, 20),
     last35games_w_per = lagfn_per(w, 35),
@@ -314,9 +302,31 @@ team_features <- teamperf %>%
     d, last5games_d_per, last20games_d_per, last35games_d_per,
     gd, last5games_gd_per, last20games_gd_per, last35games_gd_per
           ) %>%
-  dplyr::ungroup()
+  ungroup()
 
-head((team_features %>% dplyr::filter(name == "BRA")), n = 20)
+# we compute a "strength of schedule" indicator to account for each team's quality of opponents faced
+opp_strength <- function(match_id, team) {
+  return (mean((as.data.frame(match_id) %>% 
+                  left_join(teamperf, by = c("match_id")) %>%
+                  dplyr::filter(name == team) %>%
+                  mutate(periodyearstart = year(date) - year(date) %% 5) %>%
+                  left_join(history_perf, by = c("opponentName" = "name", "periodyearstart")) %>%
+                  dplyr::select(winpercentage))$winpercentage)
+  )
+}
+
+team_features <- team_features %>%
+  arrange(name, date) %>%
+  group_by(name) %>%
+  mutate(
+    strength_of_schedule = rollapplyr(match_id, width = 20, fill = NA, partial=TRUE, FUN = opp_strength, name[1])
+  ) %>%
+  ungroup()
+
+# change any missing data to 0 for strength of schedule
+team_features$strength_of_schedule[is.na(team_features$strength_of_schedule)] <- 0
+
+head(team_features, n = 50)
 summary(team_features)
 
 # fold per-team features into per-match features
@@ -351,18 +361,21 @@ match_features <- matches %>%
     last35games_gd_per.t2
   )
 
-head(match_features)
-names(match_features)
-
 # add the outcome column (value to train / predict on)
+#match_features <- left_join(match_features, scorefreq, by = c("team1Score", "team2Score")) %>%
+#  dplyr::select(-c(n,freq,scoretext))
 match_features$outcome = match_features$team1Score - match_features$team2Score
 
-# drop all non-interesting columns, and those which should not be supplied for new data (like scores)
+# drop all non-interesting columns, and those which should not be supplied for new data (like score)
 match_features <- match_features %>%
   dplyr::select(-c(match_id,team1Score,team2Score))
 
-head(match_features)
-names(match_features)
+# Model fitting
+# just azure ML!
+
+write.csv(match_features, "match_features.csv", row.names = TRUE)
+
+# just upload the match_features.csv file into Azure ML and build your experiment"
 
 # create the training formula 
 trainformula <- as.formula(paste('outcome',
@@ -372,27 +385,121 @@ trainformula
 
 # training and testing datasets
 
-data.train1 <- match_features %>% dplyr::filter(date < '2010/1/1')
-data.test1 <- match_features %>% dplyr::filter(date >= '2010/1/1')
+data.train1 <- match_features %>% filter(date >= '1960/1/1' & date < '2010/1/1')
+data.test1 <- match_features %>% filter(date >= '2010/1/1')
 
-nrow(data.train1)
-nrow(data.test1)
+# Random forest
 
-# train a random forest
+set.seed(4342)
+
 model.randomForest1 <- randomForest::randomForest(trainformula, data = data.train1, 
                                                   importance = TRUE, ntree = 100)
 
-summary(model.randomForest1)
-
-randomForest::importance(model.randomForest1, type=1)
-randomForest::varImpPlot(model.randomForest1, type=1)
+randomForest::varImpPlot(model.randomForest1)
 
 data.pred.randomForest1 <- predict(model.randomForest1, data.test1, predict.all = TRUE)
+
+
+# compute evaluation metrics 
 
 metrics.randomForest1.mae <- Metrics::mae(data.test1$outcome, data.pred.randomForest1$aggregate)
 metrics.randomForest1.rmse <- Metrics::rmse(data.test1$outcome, data.pred.randomForest1$aggregate)
 
-metrics.randomForest1.mae
-metrics.randomForest1.rmse
+metrics.condForest1.mae <- Metrics::mae(data.test1$outcome, data.pred.condForest1)
+metrics.condForest1.rmse <- Metrics::rmse(data.test1$outcome, data.pred.condForest1)
 
+metrics.nn1.mae <- Metrics::mae(data.test1$outcome, data.pred.nn1)
+metrics.nn1.rmse <- Metrics::rmse(data.test1$outcome, data.pred.nn1)
+
+R2 <- function(actual, predicted)
+  1 - sum((actual-predicted)^2)/sum((actual-mean(actual))^2)
+
+R2(data.test1$outcome, data.pred.randomForest1$aggregate)
+R2(data.test1$outcome, data.pred.condForest1)
+R2(data.test1$outcome, data.pred.nn1)
+  
+
+
+# qualified teams - calculate input dataset
+
+#load the qualified teams data
+
+if(!file.exists("qualified.csv")){
+  tryCatch(download.file('https://raw.githubusercontent.com/neaorin/PredictTheWorldCup/master/src/TournamentSim/wc2018qualified.csv'
+                         ,destfile="./qualified.csv",method="auto"))
+}
+
+if(file.exists("qualified.csv")) qualified <- read_csv("qualified.csv")
+
+head(qualified, 32)
+
+data.topredict <- expand.grid(team1 = qualified$name, team2 = qualified$name, stringsAsFactors = FALSE) %>% filter(team1 < team2)
+
+temp <- teamperf %>%
+  semi_join(qualified, by = c("name")) %>%
+  group_by(name) %>%
+  summarise(
+    date = max(date)
+  )
+
+temp <- team_features %>%
+  semi_join(temp, by = c("name", "date"))
+
+data.topredict <- data.topredict %>%
+  left_join(temp, by = c("team1" = "name")) %>%
+  left_join(temp, by = c("team2" = "name"), suffix = c(".t1", ".t2")) %>%
+  dplyr::select(
+    team1, team2,
+    last5games_w_per.t1,
+    last20games_w_per.t1,
+    last35games_w_per.t1,
+    last5games_l_per.t1,
+    last20games_l_per.t1,
+    last35games_l_per.t1,
+    last5games_d_per.t1,
+    last20games_d_per.t1,
+    last35games_d_per.t1,
+    last5games_gd_per.t1, 
+    last20games_gd_per.t1,
+    last35games_gd_per.t1,
+    last5games_w_per.t2,
+    last20games_w_per.t2,
+    last35games_w_per.t2,
+    last5games_l_per.t2,
+    last20games_l_per.t2,
+    last35games_l_per.t2,
+    last5games_d_per.t2,
+    last20games_d_per.t2,
+    last35games_d_per.t2,
+    last5games_gd_per.t2, 
+    last20games_gd_per.t2,
+    last35games_gd_per.t2
+  ) %>%
+  mutate(
+    date = as.POSIXct("2018-06-14"), 
+    team1Home = (team1 == "RUS"), team2Home = (team2 == "RUS"), neutralVenue = !(team1Home | team2Home), 
+    friendly = FALSE, qualifier = FALSE, finaltourn = TRUE
+  )
+
+write.csv(data.topredict, "match_features_wc2018.csv",row.names = TRUE)
+
+# ---------- #
+
+match_predictions_wc2018 <- read_csv("match_predictions_wc2018.csv")
+
+temp <- match_predictions_wc2018 %>% dplyr::select(team1, team2, outcome = "Scored Label Mean", sd = "Scored Label Standard Deviation")
+
+write_csv(temp, 'match_predictions_wc2018_static.csv')
+
+
+data.predicted$sd = apply(data.predicted$individual, c(1), sd)
+
+data.staticpred <- data.topredict %>% 
+  dplyr::mutate(
+    outcome = data.predicted$aggregate,
+    sd = data.predicted$sd
+    ) %>%
+  dplyr::select(team1, team2, outcome, sd)
+
+head(data.staticpred)
 

@@ -1,4 +1,4 @@
-# Reading information about FIFA-sanctioned matches
+# Reading information about FIFA-sanctioned international matches
 
 ## Requirements
 

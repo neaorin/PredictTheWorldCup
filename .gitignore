@@ -1,4 +1,6 @@
-acquisition/*
+acquisition/fifa/raw
+acquisition/fifa/processed
+node_modules
 .vscode
 
 # Temporary and binary files
