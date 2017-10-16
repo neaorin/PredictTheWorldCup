@@ -91,7 +91,8 @@ def runEliminationRound(round, prevround, schedule, predictions):
 schedule = loadCsv('wc2018schedule.csv', Match)
 predictions = loadCsv('wc2018staticPredictions.csv', Prediction)
 teams = loadCsv('wc2018qualified.csv', Team)
-f = open("results.txt", "w+")
+f = open("results.csv", "w+")
+f.write('winner\n')
 for i in range(10000):
     results = runGroupStage(schedule, predictions, teams)
     for rnd in ['AF','QF','SF','FN']:
