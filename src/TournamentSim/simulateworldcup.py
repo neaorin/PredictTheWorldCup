@@ -35,7 +35,7 @@ def getResult(match, predictions):
     reverse = prediction.team1 != match.team1
     goaldiff = numpy.random.normal(float(prediction.outcome), float(prediction.sd))
     reverse = reverse != (goaldiff < 0) 
-    normgoaldiff = 0 if abs(goaldiff) <= 0.2475 \
+    normgoaldiff = 0 if abs(goaldiff) <= 0.4475 \
         else 1 if abs(goaldiff) < 1 else round(abs(goaldiff))
     if not(allowtie) and normgoaldiff == 0:
         normgoaldiff = 1
@@ -91,11 +91,11 @@ def runEliminationRound(round, prevround, schedule, predictions):
 schedule = loadCsv('wc2018schedule.csv', Match)
 predictions = loadCsv('wc2018staticPredictions.csv', Prediction)
 teams = loadCsv('wc2018qualified.csv', Team)
-f = open("results.csv", "w+")
-f.write('winner\n')
+f = open("simresults.csv", "w+")
+f.write('iteration,winner\n')
 for i in range(10000):
     results = runGroupStage(schedule, predictions, teams)
     for rnd in ['AF','QF','SF','FN']:
         results = runEliminationRound(rnd, results, schedule, predictions)
 
-    f.write(results['WGFN2'] + '\n')
+    f.write(str(i) + ',' + results['WGFN2'] + '\n')
