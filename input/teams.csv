@@ -1,4 +1,4 @@
-association,name,fifa_code,ioc_code
+confederation,name,fifa_code,ioc_code
 CAF,Algeria,ALG,ALG
 CAF,Angola,ANG,ANG
 CAF,Benin,BEN,BEN
@@ -155,7 +155,7 @@ UEFA,Sweden,SWE,SWE
 UEFA,Switzerland,SUI,SUI
 UEFA,Turkey,TUR,TUR
 UEFA,Ukraine,UKR,UKR
-UEFA,Vatican,City,---,VAT
+UEFA,Vatican City,---,VAT
 UEFA,Wales,WAL,---
 CONCACAF,Anguilla,AIA,---
 CONCACAF,Antigua & Barbuda,ATG,ANT
