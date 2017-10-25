@@ -16,6 +16,7 @@ __pycache__/*
 .cache/*
 .*.swp
 */.ipynb_checkpoints/*
+.env
 
 # Project files
 .ropeproject
@@ -45,3 +46,6 @@ docs/api/*
 docs/_build/*
 cover/*
 MANIFEST
+
+#Temporary
+temp/*

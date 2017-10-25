@@ -1,4 +1,8 @@
-# Reading information about FIFA-sanctioned international matches
+# Acquiring data about FIFA-sanctioned international matches
+
+## Description
+
+This suite of scripts crawls the [FIFA website](http://www.fifa.com/) and reads data about FIFA-sanctioned competitions and matches. The data is saved locally.
 
 ## Requirements
 
@@ -8,7 +12,7 @@
 
 1. Install [Node.js](https://nodejs.org/en/)
 
-2. Open a shell into this folder.
+2. Clone this repository, then open a command shell in this folder.
 
 3. Install the packages specified in `package.json`
 
@@ -42,7 +46,7 @@ Output file(s): `./processed/competitions/competitions.json`
 
 Output file(s): `./raw/matches/**/*.html`
 
-8. Process each raw HTML matches into a correspondent `.json` file:
+8. Process each raw `.html` match file into a correspondent `.json` file:
 
 `node fifa_process_matches.js process`
 

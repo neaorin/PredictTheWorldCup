@@ -1,3 +1,5 @@
+# simulate the FIFA World cup 10000 times.
+
 from collections import namedtuple
 from itertools import chain, groupby
 import csv
@@ -98,4 +100,4 @@ for i in range(10000):
     for rnd in ['AF','QF','SF','FN']:
         results = runEliminationRound(rnd, results, schedule, predictions)
 
-    f.write(str(i) + ',' + results['WGFN2'] + '\n')
+    f.write(str(i+1) + ',' + results['WGFN2'] + '\n')

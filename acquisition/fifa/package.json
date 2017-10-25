@@ -8,13 +8,15 @@
     "dateformat": "^2.0.0",
     "dotenv": "^4.0.0",
     "http": "0.0.0",
+    "inherits": "^2.0.3",
     "jquery": "^3.2.1",
     "jsdom": "^11.1.0",
     "json2csv": "^3.11.1",
     "mkdirp": "^0.5.1",
     "process-nextick-args": "^1.0.7",
+    "readable-stream": "^2.3.3",
     "sync-request": "^4.1.0",
-    "sync-rest-client": "^1.0.1",
+    "sync-rest-client": "^1.0.3",
     "util-deprecate": "^1.0.2"
   }
 }
