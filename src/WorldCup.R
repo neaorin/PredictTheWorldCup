@@ -1,26 +1,18 @@
 
 # prepare the R environment
-
-library("dplyr") # Data munging functions
-library("zoo")   # Feature engineering rolling aggregates
-
-install.packages("data.table")
-library("data.table") # Feature engineering
-
-library("ggplot2") # Graphics
-library("scales") # For time formatted axis
-
-library("readr") # Reading input files
-library("stringr") # String functions
-
-install.packages("Amelia")
-library("Amelia") # missing data eval
-
-install.packages("randomForest")
-library("randomForest")  # Random forests
-
-install.packages("Metrics")
-library(Metrics) # Eval metrics for ML
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(
+  dplyr,            # Data munging functions
+  zoo,              # Feature engineering rolling aggregates
+  data.table,       # Feature engineering
+  ggplot2,          # Graphics
+  scales,           # Time formatted axis
+  readr,            # Reading input files
+  stringr,          # String functions
+  Amelia,           # missing data evaluation
+  randomForest,     # Random forests
+  Metrics           # Eval metrics for ML
+)
 
 # Load the matches data
 
@@ -266,16 +258,25 @@ gdfreq <- matches %>%
   ungroup() %>%
   arrange(desc(freq)) 
 
-head(gdfreq, 10)
+head(gdfreq, 17)
 
 gdfreq %>%
-  filter(freq >= 0.01) %>%
+  filter(freq >= 0.005) %>%
   
   ggplot(mapping = aes(x = gd, y = freq)) +
   geom_point() +
   geom_smooth(method = "loess") + 
   theme(axis.text.x = element_text(angle = 60, hjust = 1))
 
+
+# how many outliers do we have?
+temp <- matches %>% dplyr::filter(abs(team1Score - team2Score) > 7)
+head(temp)
+paste(nrow(temp), "matches, or", (nrow(temp)/nrow(matches)*100), "% of total.")
+
+# get rid of all the outliers by capping the gd to [-7, +7]
+teamperf$gd[teamperf$gd < -7] <- -7
+teamperf$gd[teamperf$gd > +7] <- +7
 
 # get information about the various FIFA confederations and the teams they contain
 if(!file.exists("teams.csv")){
@@ -359,7 +360,7 @@ team_features <- teamperf %>%
           ) %>%
   dplyr::ungroup()
 
-head((team_features %>% dplyr::filter(name == "BRA")), n = 20)
+head((team_features %>% dplyr::filter(name == "BRA" & date >= '1970-01-01')), n = 20)
 summary(team_features)
 
 # fold per-team features into per-match features
@@ -530,28 +531,53 @@ data.staticpred$sd = data.predicted$sd
 
 head(data.staticpred)
 
-temp <- data.staticpred %>% dplyr::filter(team1 == "BRA" & team2 == "GER")
+temp <- data.staticpred %>% dplyr::filter(team1 == "ARG" & team2 == "BRA")
 temp
+
+set.seed(4342)
+draw_threshold <- 0.4475
 
 temp2 <- rnorm(100, temp$outcome, temp$sd)
 temp2
 
-plot(temp2)
+plot(round(temp2))
 abline(h = 0, v = 0, col = "gray60")
 abline(h = -0.4475, v = 0, col = "gray60", lty=3)
 abline(h = +0.4475, v = 0, col = "gray60", lty=3)
-mtext(c("GER","Draw","BRA"),side=2,line=-3,at=c(-3,0,3),col= "red")
+mtext(c("ARG","Draw","BRA"),side=2,line=-3,at=c(-3,0,3),col= "red")
+
+paste("ARG won", length(temp2[temp2 > +draw_threshold]), "matches.")
+paste("BRA won", length(temp2[temp2 < -draw_threshold]), "matches.")
+paste(length(temp2[temp2 >= -draw_threshold & temp2 <= +draw_threshold]), "matches drawn.")
+
+# real results of ARG vs BRA matches
+temp <- as.vector(teamperf %>% filter(name == "ARG" & opponentName == "BRA") %>% dplyr::select(gd))
+
+plot(temp$gd)
+abline(h = 0, v = 0, col = "gray60")
+abline(h = -0.4475, v = 0, col = "gray60", lty=3)
+abline(h = +0.4475, v = 0, col = "gray60", lty=3)
+mtext(c("ARG","Draw","BRA"),side=2,line=-3,at=c(-3,0,3),col= "red")
+
+mean(temp$gd)
+sd(temp$gd)
+
+set.seed(4342)
 
 temp <- data.staticpred %>% dplyr::filter(team1 == "ARG" & team2 == "EGY")
 temp
 
 temp2 <- rnorm(100, temp$outcome, temp$sd)
 
-plot(temp2)
+plot(round(temp2))
 abline(h = 0, v = 0, col = "gray60")
 abline(h = -0.4475, v = 0, col = "gray60", lty=3)
 abline(h = +0.4475, v = 0, col = "gray60", lty=3)
 mtext(c("EGY","Draw","ARG"),side=2,line=-3,at=c(-3,0,3), col="red")
+
+paste("ARG won", length(temp2[temp2 > +draw_threshold]), "matches.")
+paste("EGY won", length(temp2[temp2 < -draw_threshold]), "matches.")
+paste(length(temp2[temp2 >= -draw_threshold & temp2 <= +draw_threshold]), "matches drawn.")
 
 write_csv(data.staticpred, "wc2018staticPredictions.csv")
 
@@ -575,15 +601,14 @@ winsperteam <- simresults %>%
   ) %>%
   dplyr::arrange(desc(wins)) 
 
-winsperteam$winner <- factor(winsperteam$winner, levels = winsperteam$winner[order(winsperteam$wins, decreasing = TRUE)])
+winsperteam$winner <- factor(winsperteam$winner, levels = winsperteam$winner[order(winsperteam$wins, decreasing = FALSE)])
 
 ggplot(winsperteam, mapping = aes(x=winner, y=wins)) +
   geom_bar(stat="identity") +
-  geom_text(aes(label=paste(wins / 100, "%")), vjust=-1)
+  coord_flip() +
+  geom_text(aes(label=paste(wins / 100, "%")), vjust=0.3, hjust=-0.1)
 
 # calculate the sports odds 
 
 winsperteam$odds <- lengths(simresults) / winsperteam$wins
-paste(winsperteam$winner, ": ",round(winsperteam$odds), " to 1")
-
-
+writeLines(paste(winsperteam$winner, ": ",round(winsperteam$odds), " to 1\n"))
