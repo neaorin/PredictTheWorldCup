@@ -11,7 +11,8 @@ pacman::p_load(
   stringr,          # String functions
   Amelia,           # missing data evaluation
   randomForest,     # Random forests
-  Metrics           # Eval metrics for ML
+  Metrics,          # Eval metrics for ML
+  vcd               # Visualizing discrete distributions
 )
 
 # Load the matches data
@@ -227,7 +228,6 @@ scorefreq <- matches %>%
   head(scorefreq, 20)
 
 # distribution of goals scored per match
-
 gsfreq <- matches %>%
   group_by(gs = team1Score + team2Score) %>%
   summarise(
@@ -241,16 +241,11 @@ head(gsfreq, 10)
 
 gsfreq %>%
   filter(freq >= 0.01) %>%
-  
-  ggplot(mapping = aes(x = gs, y = freq)) +
-  geom_point() +
-  geom_smooth(method = "loess") + 
-  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+  ggplot(mapping = aes(x = gs, y = freq)) + geom_bar(stat = "identity")
 
-# distribution of goal differential per match
-
+# distribution of goal differential
 gdfreq <- matches %>%
-  group_by(gd = team1Score - team2Score) %>%
+  group_by(gd = abs(team1Score - team2Score)) %>%
   summarise(
     n = n(),
     freq = n / nrow(matches)
@@ -258,16 +253,11 @@ gdfreq <- matches %>%
   ungroup() %>%
   arrange(desc(freq)) 
 
-head(gdfreq, 17)
+head(gdfreq, 10)
 
 gdfreq %>%
-  filter(freq >= 0.005) %>%
-  
-  ggplot(mapping = aes(x = gd, y = freq)) +
-  geom_point() +
-  geom_smooth(method = "loess") + 
-  theme(axis.text.x = element_text(angle = 60, hjust = 1))
-
+  filter(freq >= 0.01) %>%
+  ggplot(mapping = aes(x = gd, y = freq)) + geom_bar(stat = "identity")
 
 # how many outliers do we have?
 temp <- matches %>% dplyr::filter(abs(team1Score - team2Score) > 7)
@@ -444,6 +434,14 @@ metrics.randomForest1.rmse <- Metrics::rmse(data.test1$outcome, data.pred.random
 
 metrics.randomForest1.mae
 metrics.randomForest1.rmse
+
+temp <- abs(data.test1$outcome - data.pred.randomForest1$aggregate)
+plot(temp)
+
+#check the +15 MAE error
+crazy_error <- which(temp > 15)
+data.test1[crazy_error,]
+data.pred.randomForest1$aggregate[crazy_error]
 
 if(!file.exists("wc2018qualified.csv")){
     tryCatch(download.file('https://raw.githubusercontent.com/neaorin/PredictTheWorldCup/master/src/TournamentSim/wc2018qualified.csv'
