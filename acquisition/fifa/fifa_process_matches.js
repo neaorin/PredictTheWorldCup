@@ -1,149 +1,123 @@
-let jsdom = require('jsdom/lib/old-api');
-let fs = require('fs');
+let fs = require("fs")
+let moment = require("moment")
 let mkdirp = require('mkdirp');
-let competitions = require('./processed/competitions/competitions.json');
 
+// FIFA-sanctioned competitions which you are NOT interested in. These will not be included in the processed dataset
+const skippedTournaments = [ 'beach', 'futsal', 'u17', 'u-17', 'u-20', 'club final', 'club world cup', 'club world championship', 'youth olympic' ]
 
-function processMatchFile(filePath)
-{
+let processedMatches = []
 
-  let outputFilePath = filePath.replace('raw','processed').replace('.html','.json');
-    if(fs.existsSync(outputFilePath)) {
-    console.log(outputFilePath + " exists.");
-    return 0;
-  }
-  
-  console.log('Processing ' + filePath);
-  let outputDirPath = outputFilePath.substring(0, outputFilePath.lastIndexOf('/'));
-  mkdirp.sync(outputDirPath);
+let processMatchFile = function(filename) {
+	let contents = fs.readFileSync(filename);
+ 	let jsonContent = JSON.parse(contents);
 
-  jsdom.env({
-    file: filePath,
-    scripts: [
-      'https://code.jquery.com/jquery-2.1.4.min.js'
-    ],
-    done: function (err, window) {
-      if (err != null) {
-        console.log(err);
-        return null;
-      }
-      let $ = window.jQuery;
-  
-      let idCupSeason = filePath.match(/^\.\/raw\/matches\/(.*)\/.*$/)[1];
-          
-      let results = $("div.mc-match-is-result").map(function() {
-           try {
-            let match = {
-                date: $(this).attr("data-matchdate"),
-                team1: $(this).find("div.home div.t-i img.i-3-flag").attr('class').substring(0, 3),
-                team1Text: $(this).find("div.home span.t-nText").text().trim(),
-                team2: $(this).find("div.away div.t-i img.i-3-flag").attr('class').substring(0, 3),
-                team2Text: $(this).find("div.away span.t-nText").text().trim(),
-                resText: $(this).find("div.s span.s-resText").text().trim(),
-                statText: $(this).find("div.s span.s-statText").text().trim(),
-                venue: $(this).find("div.m-venue span.m-venueText").text().trim(),
-                IdCupSeason: idCupSeason
-            };
-            let compids = competitions.filter(function(item) {
-                return (item.IdCupSeason == match.IdCupSeason);
-            });
-            if (compids.length != 0) {
-                match.CupName = compids[0].CupName;
-            }
-            
-            let scoreMatches = match.resText.match(/^(.*)-(.*).*\((.*)-(.*)\)$/);
-            if (scoreMatches != null && scoreMatches.length == 5) {
-                match.team1Score = scoreMatches[1];
-                match.team2Score = scoreMatches[2];
-                match.team1PenScore = scoreMatches[3];
-                match.team2PenScore = scoreMatches[4];          
-            }
-            else {
-                scoreMatches = match.resText.match(/^(.*)-(.*).*$/);
-                if (scoreMatches != null && scoreMatches.length == 3) {
-                match.team1Score = scoreMatches[1];
-                match.team2Score = scoreMatches[2];         
-                }
-            }
-            return match;
-          }
-          catch (ex) {
-              console.error("Error processing file " + filePath + " : " + ex);
-              return null;
-          }
-          
-      }).get();
-      
-      fs.writeFileSync(outputFilePath, JSON.stringify(results));
-    }
-  });
-  
+ 	for (competitionId in jsonContent.competitionslist) {
+ 		const competition = jsonContent.competitionslist[competitionId];
+
+ 		let shouldSkip = false;
+
+ 		// skip non-official grass football games
+ 		for (idx in skippedTournaments) {
+	 		if (competition.name.toLowerCase().indexOf(skippedTournaments[idx]) != -1) { 
+	 			shouldSkip = true;
+	 			break;
+	 		}
+
+	 		if (competition.competitionSeoName.toLowerCase().indexOf(skippedTournaments[idx]) != -1) { 
+	 			shouldSkip = true;
+	 			break;
+	 		}
+
+ 		}
+
+ 		// skip club competitions
+ 		if (!shouldSkip && competition.isClubCompetition === true) {
+ 			shouldSkip = true;
+ 		}
+
+ 		if (shouldSkip) {
+ 			console.log(`Skipping ${competition.name} [${competition.competitionSeoName}] ...`);
+ 			continue;
+ 		}
+
+		console.log(`Processing ${competition.name} [${competition.competitionSeoName}] ...`);
+		processTournament(competition)
+ 	}
 }
 
-let walk = function(dir) {
-    let results = [];
-    let list = fs.readdirSync(dir);
-    list.forEach(function(file) {
-        file = dir + '/' + file
-        let stat = fs.statSync(file);
-        if (stat && stat.isDirectory()) results = results.concat(walk(file));
-        else results.push(file);
-    })
-    return results;
-} 
+let processTournament = function(tournamentJson) {
+	for (gameJsonId in tournamentJson.matchlist) {
+		gameJson = tournamentJson.matchlist[gameJsonId]
 
-// individual files - raw html to processed json files
-function processRawFiles() {
-    let files = walk('./raw/matches');
-    files.forEach(function(file) {
-        processMatchFile(file);
-    });
+		if (!gameJson.isFinished) {
+			continue;
+		}
+
+		let rawDate = gameJson.matchDate
+
+		if (gameJson.hasOwnProperty('matchDateUTC')) {
+			rawDate = gameJson.matchDateUTC
+		}
+
+		let date = moment(rawDate);
+		let dateComponent = date.utc().format('YYYYMMDD');
+
+		let venue = ''
+		if (gameJson.hasOwnProperty('venue')) {
+			let venue = gameJson.venue.trim()
+		} 
+
+		let processedMatch = {
+	      "date": dateComponent,
+	      "team1": gameJson.homeCountryCode,
+	      "team1Text": gameJson.homeTeamName,
+	      "team2": gameJson.awayCountryCode,
+	      "team2Text": gameJson.awayTeamName,
+	      "venue": venue,
+	      "IdCupSeason": gameJson.idCupSeason.toString(),
+	      "CupName": gameJson.cupKindName,
+	      "team1Score": gameJson.scoreHome,
+	      "team2Score": gameJson.scoreAway,		
+		}
+
+		// reasonWinCode values from: http://js.fifa.com/components/script/require-libs/lang=en/main.js
+		// for our purposes only 3 is important enough
+
+		// "fifa.winningReason_0":{text:"Draw", abbr:"Draw"},
+		// "fifa.winningReason_2":{text:"{WinTeamName} win after extra time", abbr:"{WinTeamName} win AET"},
+		// "fifa.winningReason_3":{text:"{WinTeamName} win on penalties ({ScorePenH} - {ScorePenA})", abbr:"{WinTeamCountry} win after PSO"},
+		// "fifa.winningReason_4":{text:"{WinTeamName} win on aggregate after regular time ({ScoreAggH} - {ScoreAggA})", abbr:"{WinTeamCountry} Win on agg."},
+		// "fifa.winningReason_5":{text:"{WinTeamName} win on aggregate after extra time ({ScoreAggH} - {ScoreAggA})", abbr:"{WinTeamCountry} win on agg AET"},
+		// "fifa.winningReason_6":{text:"{WinTeamName} win on away goal after regular time", abbr:"{WinTeamCountry} win on away goals"},
+		// "fifa.winningReason_7":{text:"{WinTeamName} win on away goal after extra time", abbr:"{WinTeamCountry} win on away goals AET"},
+		// "fifa.winningReason_8":{text:"Win by Silver Goal", abbr:"Win by Silver Goal"},
+		// "fifa.winningReason_9":{text:"Win on Golden Goal", abbr:"Win by Golden Goal"},
+
+		if (gameJson.hasOwnProperty('reasonWinCode')) {
+			if (gameJson.reasonWinCode === 3) {
+				processedMatch["team1PenScore"] = gameJson.scorePenaltyHome
+				processedMatch["team2PenScore"] = gameJson.scorePenaltyAway
+				processedMatch["statText"] = "Win on penalty"
+				processedMatch["resText"] = `${gameJson.scoreHome}-${gameJson.scoreAway} (${gameJson.scorePenaltyHome}-${gameJson.scorePenaltyAway})`				
+			}
+
+		} else {
+			processedMatch["statText"] = ""
+			processedMatch["resText"] = `${gameJson.scoreHome}-${gameJson.scoreAway}`
+		}
+
+		processedMatches.push(processedMatch)
+	}
 }
 
+//main
+let path = './raw/matches/';
+let files = fs.readdirSync(path);
 
+files.forEach(function(file) {
+    processMatchFile(`./raw/matches/${file}`);
+});
 
-// concatenate json files into one file
-function concatenateProcessedFiles() {
-    // delete output file so it doesn't get processed as input
-    let outputFilePath = './processed/matches/matches.json';
-    if(fs.existsSync(outputFilePath)) {
-        fs.unlinkSync(outputFilePath);
-    }
-
-    let files = walk('./processed/matches');
-    let matches = new Array();
-    files.forEach(function(file) {
-        if (file.endsWith('.json')) {
-            let filematches = require(file);
-            matches = matches.concat(filematches);
-        }
-    });
-    fs.writeFileSync(outputFilePath, JSON.stringify(matches, null, 3));
-}
-
-
-// check how many files are raw vs processed
-function checkFiles() {
-    console.log(walk('./raw/matches').length);
-    console.log(walk('./processed/matches').length);
-}
-
-
-// main
-if (process.argv.length <= 2)
-    console.error("Must supply action: process, concat, check");
-else {
-    switch (process.argv[2]) {
-        case "process": 
-            processRawFiles();
-            break;
-        case "concat":
-            concatenateProcessedFiles();
-            break;
-        case "check":
-            checkFiles();
-            break;
-        default:
-            console.error("Action not understood.")
-    }
-}
+mkdirp.sync('./processed/matches/');
+fs.writeFileSync('./processed/matches/matches.json', JSON.stringify(processedMatches));
+console.log('done.')

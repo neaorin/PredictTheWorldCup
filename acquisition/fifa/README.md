@@ -12,54 +12,36 @@ This suite of scripts crawls the [FIFA website](http://www.fifa.com/) and reads 
 
 1. Install [Node.js](https://nodejs.org/en/)
 
-2. Clone this repository, then open a command shell in this folder.
+2. Clone this repository, then open a command shell in this folder, which is `(repository root folder)/acquisition/fifa`.
 
 3. Install the packages specified in `package.json`
 
-`npm install`
+    `npm install`
 
 4. (Optional) Change the time period for which you'd like to fetch matches. The default period is **2014 - 2015**.
 
-Create a file called `.env` in this folder and fill in the values you require:
+    Create a file called `.env` in this folder and fill in the values you require:
 
-```
-FROM_YEAR=2009
-TO_YEAR=2016
-```
-Save the `.env` file.
+    ```text
+    FROM_YEAR=1950
+    TO_YEAR=2017
+    ```
+    Save the `.env` file.
 
-5. Get a list of competitions.
+5. Get match data from FIFA website.
 
-`node fifa_get_competitions.js`
+    `node fifa_get_matches.js`
 
-Output file(s): `./raw/competitions/*.json`
+    Output file(s): `./raw/matches/*.json`
 
-6. Process the list of competitions into a single file.
+6. Concatenate the match files into a single `matches.json` file:
 
-`node fifa_process_competitions.js`
+    `node fifa_process_matches.js`
 
-Output file(s): `./processed/competitions/competitions.json`
+    Output file(s): `./processed/matches/matches.json`
 
-7. Get a list of matches.
+7. (Optional) Transform the `matches.json` file into a `.csv` file.
 
-`node fifa_get_matches.js`
+    `node fifa_transformcsv.js`
 
-Output file(s): `./raw/matches/**/*.html`
-
-8. Process each raw `.html` match file into a correspondent `.json` file:
-
-`node fifa_process_matches.js process`
-
-Output file(s): `./processed/matches/**/*.json`
-
-9. Concatenate the matches files into a single `matches.json` file:
-
-`node fifa_process_matches.js concat`
-
-Output file(s): `./processed/matches/matches.json`
-
-10. (Optional) Transform the `matches.json` file into a `.csv` file.
-
-`node fifa_transformcsv.js`
-
-Output file(s): `./processed/matches/matches.csv`
+    Output file(s): `./processed/matches/matches.csv`
