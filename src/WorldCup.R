@@ -9,11 +9,15 @@ pacman::p_load(
   scales,           # Time formatted axis
   readr,            # Reading input files
   stringr,          # String functions
-  Amelia,           # missing data evaluation
+  reshape2,         # restructure and aggregate data 
   randomForest,     # Random forests
+  corrplot,         # correlation plots
   Metrics,          # Eval metrics for ML
   vcd               # Visualizing discrete distributions
 )
+    
+# set options for plots
+options(repr.plot.width=6, repr.plot.height=6)
 
 # Load the matches data
 
@@ -43,7 +47,7 @@ summary(matches)
 matches %>%
   ggplot(mapping = aes(year(date))) +
     geom_bar(aes(fill=CupName), width=1, color="black") +
-    theme(legend.position = "bottom", legend.direction = "vertical")
+    theme(legend.position = "bottom", legend.direction = "vertical") + ggtitle("Matches played by Year")
 
 # how many goals have been scored per game over the years? 
 matches %>%
@@ -55,10 +59,28 @@ matches %>%
     ) %>%
   ggplot(mapping = aes(x = year, y = goalspergame)) +
     geom_point() +
-    geom_smooth(method = "loess")
+    geom_smooth(method = "loess") + ggtitle("Goals scored per game, over time")
 
 # what values is our dataset missing?
-Amelia::missmap(matches, main = "Missing values")
+
+ggplot_missing <- function(x){
+
+  x %>%
+    is.na %>%
+    melt %>%
+    ggplot(mapping = aes(x = Var2,
+               y = Var1)) +
+    geom_raster(aes(fill = value)) +
+    scale_fill_grey(name = "",
+                    labels = c("Present","Missing")) +
+    theme(axis.text.x  = element_text(angle=45, vjust=0.5)) +
+    labs(x = "Variables in Dataset",
+         y = "Rows / observations")
+}
+
+ggplot_missing(matches)
+
+#Amelia::missmap(matches, main = "Missing values")
 
 summary(matches$team1Score - matches$team2Score)
 
@@ -111,11 +133,10 @@ matches$friendly <- FALSE
 matches$friendly[matches$CupName == "Friendly"] <- TRUE
 
 matches$qualifier <- FALSE
-matches$qualifier[matches$CupName %like% "Qual"] <- TRUE
+matches$qualifier[matches$CupName %like% "qual"] <- TRUE
 
 matches$finaltourn <- FALSE
-matches$finaltourn[matches$CupName %like% "Final"] <- TRUE
-matches$finaltourn[matches$CupName %like% "Confederations Cup"] <- TRUE
+matches$finaltourn[matches$CupName %like% "final"] <- TRUE
 
 head(matches)
 
@@ -186,6 +207,7 @@ plot_winpercentage <- function(teamperf, mingames) {
   geom_point(size = 1.5) + 
   geom_text(aes(label=name), hjust=-.2 , vjust=-.2, size=3) +
   geom_vline(xintercept = .5, linetype = 2, color = "red") +
+  ggtitle("Winning Percentage vs Games Played") +
   expand_limits(x = c(0,1))
 } 
 
@@ -241,23 +263,23 @@ head(gsfreq, 10)
 
 gsfreq %>%
   filter(freq >= 0.01) %>%
-  ggplot(mapping = aes(x = gs, y = freq)) + geom_bar(stat = "identity")
+  ggplot(mapping = aes(x = gs, y = freq)) + geom_bar(stat = "identity") + ggtitle("Goals scored per match distribution")
 
 # distribution of goal differential
 gdfreq <- matches %>%
-  group_by(gd = abs(team1Score - team2Score)) %>%
+  group_by(gd = team1Score - team2Score) %>%
   summarise(
     n = n(),
     freq = n / nrow(matches)
   ) %>%
   ungroup() %>%
-  arrange(desc(freq)) 
+  arrange(gd) 
 
-head(gdfreq, 10)
+head(gdfreq %>% filter(abs(gd)<=4), 10)
 
 gdfreq %>%
-  filter(freq >= 0.01) %>%
-  ggplot(mapping = aes(x = gd, y = freq)) + geom_bar(stat = "identity")
+  filter(abs(gd)<=4) %>%
+  ggplot(mapping = aes(x = gd, y = freq)) + geom_bar(stat = "identity") + ggtitle("Goal differential distribution")
 
 # how many outliers do we have?
 temp <- matches %>% dplyr::filter(abs(team1Score - team2Score) > 7)
@@ -388,14 +410,12 @@ match_features <- matches %>%
     last50games_gd_per.t2,
     last10games_opp_cc_per.t2, 
     last30games_opp_cc_per.t2, 
-    last50games_opp_cc_per.t2
+    last50games_opp_cc_per.t2,
+    outcome = gd.t1
   )
 
 head(match_features)
 names(match_features)
-
-# add the outcome column (value to train / predict on)
-match_features$outcome = match_features$team1Score - match_features$team2Score
 
 # drop all non-interesting columns, and those which should not be supplied for new data (like scores)
 match_features <- match_features %>%
@@ -403,6 +423,10 @@ match_features <- match_features %>%
 
 head(match_features)
 names(match_features)
+
+# correlation matrix
+cormatrix <- cor(match_features %>% dplyr::select(-c(date, team1, team2, team1Home, team2Home, neutralVenue, friendly, qualifier, finaltourn)) )
+corrplot(cormatrix, type = "upper", order = "original", tl.col = "black", tl.srt = 45, tl.cex = 0.5)
 
 # create the training formula 
 trainformula <- as.formula(paste('outcome',
@@ -420,7 +444,7 @@ nrow(data.test1)
 
 # train a random forest
 model.randomForest1 <- randomForest::randomForest(trainformula, data = data.train1, 
-                                                  importance = TRUE, ntree = 100)
+                                                  importance = TRUE, ntree = 500)
 
 summary(model.randomForest1)
 
@@ -432,16 +456,11 @@ data.pred.randomForest1 <- predict(model.randomForest1, data.test1, predict.all 
 metrics.randomForest1.mae <- Metrics::mae(data.test1$outcome, data.pred.randomForest1$aggregate)
 metrics.randomForest1.rmse <- Metrics::rmse(data.test1$outcome, data.pred.randomForest1$aggregate)
 
-metrics.randomForest1.mae
-metrics.randomForest1.rmse
+paste("Mean Absolute Error:", metrics.randomForest1.mae)
+paste("Root Mean Square Error:",metrics.randomForest1.rmse)
 
-temp <- abs(data.test1$outcome - data.pred.randomForest1$aggregate)
-plot(temp)
-
-#check the +15 MAE error
-crazy_error <- which(temp > 15)
-data.test1[crazy_error,]
-data.pred.randomForest1$aggregate[crazy_error]
+abs_error <- abs(data.test1$outcome - data.pred.randomForest1$aggregate)
+plot(abs_error, main="Mean Absolute Error") 
 
 if(!file.exists("wc2018qualified.csv")){
     tryCatch(download.file('https://raw.githubusercontent.com/neaorin/PredictTheWorldCup/master/src/TournamentSim/wc2018qualified.csv'
@@ -538,11 +557,11 @@ draw_threshold <- 0.4475
 temp2 <- rnorm(100, temp$outcome, temp$sd)
 temp2
 
-plot(round(temp2))
+plot(round(temp2),xlab="Match Index",ylab="Goal Diff", main="ARG vs BRA, 100 simulated matches")
 abline(h = 0, v = 0, col = "gray60")
 abline(h = -0.4475, v = 0, col = "gray60", lty=3)
 abline(h = +0.4475, v = 0, col = "gray60", lty=3)
-mtext(c("ARG","Draw","BRA"),side=2,line=-3,at=c(-3,0,3),col= "red")
+mtext(c("BRA","Draw","ARG"),side=2,line=-3,at=c(-3,0,3),col= "red")
 
 paste("ARG won", length(temp2[temp2 > +draw_threshold]), "matches.")
 paste("BRA won", length(temp2[temp2 < -draw_threshold]), "matches.")
@@ -551,14 +570,15 @@ paste(length(temp2[temp2 >= -draw_threshold & temp2 <= +draw_threshold]), "match
 # real results of ARG vs BRA matches
 temp <- as.vector(teamperf %>% filter(name == "ARG" & opponentName == "BRA") %>% dplyr::select(gd))
 
-plot(temp$gd)
+plot(temp$gd,xlab="Match Index",ylab="Goal Diff", main="ARG vs BRA, real matches")
 abline(h = 0, v = 0, col = "gray60")
 abline(h = -0.4475, v = 0, col = "gray60", lty=3)
 abline(h = +0.4475, v = 0, col = "gray60", lty=3)
-mtext(c("ARG","Draw","BRA"),side=2,line=-3,at=c(-3,0,3),col= "red")
+mtext(c("BRA","Draw","ARG"),side=2,line=-3,at=c(-3,0,3),col= "red")
 
-mean(temp$gd)
-sd(temp$gd)
+paste("ARG won", nrow(temp %>% dplyr::filter(gd > 0)), "matches.")
+paste("BRA won", nrow(temp %>% dplyr::filter(gd < 0)), "matches.")
+paste(nrow(temp %>% dplyr::filter(gd == 0)), "matches drawn.")
 
 set.seed(4342)
 
@@ -567,7 +587,7 @@ temp
 
 temp2 <- rnorm(100, temp$outcome, temp$sd)
 
-plot(round(temp2))
+plot(round(temp2),xlab="Match Index",ylab="Goal Diff", main="ARG vs EGY, 100 simulated matches")
 abline(h = 0, v = 0, col = "gray60")
 abline(h = -0.4475, v = 0, col = "gray60", lty=3)
 abline(h = +0.4475, v = 0, col = "gray60", lty=3)
@@ -604,7 +624,8 @@ winsperteam$winner <- factor(winsperteam$winner, levels = winsperteam$winner[ord
 ggplot(winsperteam, mapping = aes(x=winner, y=wins)) +
   geom_bar(stat="identity") +
   coord_flip() +
-  geom_text(aes(label=paste(wins / 100, "%")), vjust=0.3, hjust=-0.1)
+  geom_text(aes(label=paste(wins / 100, "%")), vjust=0.3, hjust=-0.1, size=2.1) +
+  ggtitle("Tournament simulation winners (10,000 iterations)")
 
 # calculate the sports odds 
 
