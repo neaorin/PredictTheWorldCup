@@ -2,6 +2,8 @@ let fs = require("fs")
 let moment = require("moment")
 let mkdirp = require('mkdirp');
 
+let cities = require('./cities.json');
+
 // FIFA-sanctioned competitions which you are NOT interested in. These will not be included in the processed dataset
 const skippedTournaments = [ 'beach', 'futsal', 'u17', 'u-17', 'u-20', 'club final', 'club world cup', 'club world championship', 'youth olympic' ]
 
@@ -63,8 +65,11 @@ let processTournament = function(tournamentJson) {
 		let dateComponent = date.utc().format('YYYYMMDD');
 
 		let venue = ''
-		if (gameJson.hasOwnProperty('venue')) {
-			let venue = gameJson.venue.trim()
+		if (gameJson.hasOwnProperty('venueName')) {
+			venue = gameJson.venueName.trim()
+			let cityData = cities.find(x => x.city == venue);
+			if (cityData) 
+				venue = `${venue}, ${cityData.country}`;
 		} 
 
 		let processedMatch = {
