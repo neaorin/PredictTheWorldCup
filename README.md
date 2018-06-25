@@ -12,4 +12,4 @@ Afterwards, we're going to use that model to run multiple simulations of the nex
 
 This tutorial is meant for people who are new to Machine Learning, and want to better understand the data science process, as well as the R language.
 
-The rest of this tutorial is [available online](https://aka.ms/predicttheworldcup). 
+The rest of this tutorial is [available online](https://aka.ms/predicttheworldcup). There is also [a static version](./blob/master/src/WorldCup.ipynb) of the tutorial, in this GitHub repository.
